@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Maps a private edit key to its basket. Can be looked up only by
+    // someone who already has the edit link; it can never be listed or changed.
+    match /owners/{editKey} {
+      allow get: if true;
+      allow create: if editKey.size() >= 20
+        && request.resource.data.keys().hasOnly(['listId'])
+        && exists(/databases/$(database)/documents/lists/$(request.resource.data.listId));
+      allow list, update, delete: if false;
+    }
+
+    // A basket. Its random ID is the "key": nobody can browse or list
+    // baskets, you can only open one if you were given its link.
+    match /lists/{listId} {
+      allow get: if true;
+      allow list, delete: if false;
+      allow create, update: if listId.size() >= 16
+        && request.resource.data.keys().hasOnly(['title', 'owner', 'items', 'created', 'updated'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 300;
+
+      // "Already bought" ticks. Stored separately from the basket so the
+      // owner's page never downloads them.
+      match /claims/{itemId} {
+        allow read, delete: if true;
+        allow create, update: if request.resource.data.keys().hasOnly(['by', 'at'])
+          && request.resource.data.by is string
+          && request.resource.data.by.size() <= 60;
+      }
+    }
+  }
+}
