@@ -37,28 +37,23 @@ The free "Spark" plan is more than enough for this, and you never need to enter 
 
 ---
 
-## Using it
+## Using it (family mode)
 
-1. Open your site, type your name and a basket name, and click **Create basket**.
-2. Add gift links (with an optional price and note).
-3. Click **Copy share link** and send it to friends and family.
-4. Bookmark your **private edit link** (under "Your private edit link") so you can edit from another device. The site remembers your baskets on the device you made them on.
+Everyone uses **one link**: `https://YOUR-USERNAME.github.io/gift-basket/#/f/<family code>`
 
-If you open your own share link on the device you made the basket on, the site warns you before showing any spoilers.
+1. Open the link and tap your name. Your phone remembers it.
+2. **My basket** is where you add things you'd like. You never see what's been bought for you.
+3. Tap anyone else's name to see their basket and press **I bought this**. Everyone except the basket's owner sees the tick.
 
-## How the secrecy works
+The family code is any random text of 16+ characters that you make up once; it keeps the baskets private to people with the link. The names live in [`family.js`](family.js) — edit that list to add or remove people.
 
-| Link | Who gets it | Can do |
-|---|---|---|
-| `…/#/edit/<edit key>` | You only | Add and remove gifts. **Never loads ticks.** |
-| `…/#/b/<basket id>` | Gift-givers | See gifts, tick and untick "bought" |
+Picking your name works on trust: anyone could tap someone else's name, or pick the wrong one and spoil their own surprise. It's meant for family, not for keeping secrets from strangers.
 
-The edit key and the basket ID are different random codes, so the share link can't be turned into your edit link or the other way round. Baskets can't be browsed or searched, so only people with a link can find one.
-
-This works on trust, just like Basket did. If you open your own share link and click past the spoiler warning, you'll see the ticks. Someone technically minded who has your share link could also change your basket through the database directly. That's fine for friends and family, but don't put anything private in a basket.
+Single baskets made before family mode (`#/b/…` and `#/edit/…` links) still work.
 
 ## Files
 
 - `index.html`, `style.css`, `app.js`: the whole site, with no build step
+- `family.js`: the names of everyone with a basket
 - `firebase-config.js`: your Firebase settings (these are meant to be public)
 - `firestore.rules`: database security rules (paste into Firebase)

@@ -4,9 +4,11 @@ import {
   serverTimestamp, arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { family } from "./family.js";
 
 const app = document.getElementById("app");
 let unsubscribers = [];
+let nav = 0; // bumps on every page change, so slow pages don't draw over newer ones
 
 // ---------- helpers ----------
 
@@ -51,13 +53,22 @@ if (configured) db = getFirestore(initializeApp(firebaseConfig));
 function route() {
   unsubscribers.forEach((u) => u());
   unsubscribers = [];
+  nav++;
   window.scrollTo(0, 0);
   if (!configured) return renderSetup();
 
   const [, page, a] = location.hash.split("/");
   if (page === "edit" && a) return renderOwner(a);
   if (page === "b" && a) return renderGifter(a);
-  renderHome();
+
+  // Family mode: one shared link, everyone picks their name
+  if (page === "f" && a) { store.set("familyCode", a); history.replaceState(null, "", "#/"); }
+  if (!store.get("familyCode", "")) return renderHome();
+  const me = store.get("me", "");
+  if (page === "who" || !family.includes(me)) return renderWho();
+  const person = family.find((n) => n === decodeURIComponent(a || ""));
+  if (page === "p" && person) return person === me ? renderMyBasket(me) : renderTheirBasket(person, me);
+  renderFamily(me);
 }
 window.addEventListener("hashchange", route);
 route();
@@ -297,4 +308,163 @@ function itemCard(item, actionsHtml, done = false) {
       </div>
       <div class="item-actions">${actionsHtml}</div>
     </li>`).firstChild;
+}
+
+// ---------- family mode ----------
+
+// Each person's basket ID is the secret code from the family link plus
+// their name, so baskets can't be found without the link.
+function basketId(name) { return `${store.get("familyCode", "")}-${name.toLowerCase()}`; }
+
+function renderWho() {
+  app.replaceChildren(h(`
+    <section class="card center">
+      <h1>Who are you?</h1>
+      <p class="muted">Tap your name. This hides what people have bought for you, so your gifts stay a surprise.</p>
+      <div class="people">
+        ${family.map((n) => `<button class="person" data-name="${esc(n)}">${esc(n)}</button>`).join("")}
+      </div>
+    </section>`));
+  app.querySelector(".people").addEventListener("click", (e) => {
+    const name = e.target.dataset.name;
+    if (!name) return;
+    store.set("me", name);
+    if (location.hash === "#/") route(); else location.hash = "#/";
+  });
+}
+
+async function renderFamily(me) {
+  app.replaceChildren(h(`
+    <section class="card">
+      <h1>Hi ${esc(me)} 👋</h1>
+      <p class="muted">Not ${esc(me)}? <a href="#/who">Change name</a></p>
+      <a class="button primary big" href="#/p/${encodeURIComponent(me)}">🧺 My basket — add things I'd like</a>
+    </section>
+    <section class="card">
+      <h2>Buying a gift? Pick a basket</h2>
+      <div class="people">
+        ${family.filter((n) => n !== me).map((n) => `
+          <a class="person" href="#/p/${encodeURIComponent(n)}">${esc(n)}<small data-count="${esc(n)}">&nbsp;</small></a>`).join("")}
+      </div>
+    </section>`));
+
+  const page = nav;
+  for (const name of family.filter((n) => n !== me)) {
+    const ref = doc(db, "lists", basketId(name));
+    if (page !== nav) return;
+    unsubscribers.push(onSnapshot(ref, (snap) => {
+      const el = app.querySelector(`[data-count="${name}"]`);
+      const n = snap.exists() ? snap.data().items.length : 0;
+      if (el) el.textContent = n === 0 ? "empty" : n === 1 ? "1 gift" : `${n} gifts`;
+    }));
+  }
+}
+
+// Your own basket: add and remove gifts. Never reads the "claims" collection.
+async function renderMyBasket(me) {
+  const page = nav;
+  const listRef = doc(db, "lists", basketId(me));
+  const snap = await getDoc(listRef);
+  if (!snap.exists()) {
+    await setDoc(listRef, { title: `${me}'s basket`, owner: me, items: [], created: serverTimestamp(), updated: serverTimestamp() });
+  }
+  if (page !== nav) return;
+
+  app.replaceChildren(h(`
+    <p><a href="#/">← Back to everyone</a></p>
+    <section class="card">
+      <p class="eyebrow">My basket</p>
+      <h1>Add a gift you'd like</h1>
+      <form id="add" class="stack">
+        <label>What is it?<input name="title" maxlength="120" placeholder="e.g. Blue slippers, size 7"></label>
+        <label><span>Link to it <span class="muted">(if you have one)</span></span><input name="url" type="url" inputmode="url" placeholder="Paste the web link here"></label>
+        <div class="row">
+          <label><span>Price <span class="muted">(optional)</span></span><input name="price" maxlength="20" placeholder="£25"></label>
+          <label><span>Note <span class="muted">(optional)</span></span><input name="note" maxlength="200" placeholder="Colour, size…"></label>
+        </div>
+        <button class="primary big">Add to my basket</button>
+      </form>
+      <p class="muted small">🤫 You can't see what's been bought for you — it's a surprise.</p>
+    </section>
+    <section><ul id="items" class="items"></ul></section>`));
+
+  let items = [];
+  unsubscribers.push(onSnapshot(listRef, (s) => {
+    items = s.exists() ? s.data().items : [];
+    const ul = app.querySelector("#items");
+    ul.replaceChildren(items.length ? "" : h(`<li class="empty">Nothing in your basket yet — add your first gift above.</li>`));
+    items.forEach((item) => ul.append(itemCard(item, `<button class="danger" data-del="${esc(item.id)}">Remove</button>`)));
+  }));
+
+  app.querySelector("#items").addEventListener("click", async (e) => {
+    const id = e.target.dataset.del;
+    if (!id || !confirm("Remove this from your basket?")) return;
+    await updateDoc(listRef, { items: items.filter((i) => i.id !== id), updated: serverTimestamp() });
+  });
+
+  app.querySelector("#add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target, f = new FormData(form);
+    const url = f.get("url").trim(), title = f.get("title").trim();
+    if (!url && !title) return toast("Type what it is, or paste a link");
+    const item = { id: randomId(10), url, title: title || domainOf(url) || url, price: f.get("price").trim(), note: f.get("note").trim() };
+    form.reset();
+    try {
+      await updateDoc(listRef, { items: arrayUnion(item), updated: serverTimestamp() });
+      toast("Added to your basket");
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't add that — please try again");
+    }
+  });
+}
+
+// Someone else's basket: see their gifts and tick what you've bought.
+async function renderTheirBasket(person, me) {
+  const page = nav;
+  const listId = basketId(person);
+  if (page !== nav) return;
+  app.replaceChildren(h(`
+    <p><a href="#/">← Back to everyone</a></p>
+    <section class="card">
+      <h1>${esc(person)}'s basket</h1>
+      <p class="muted">Bought something? Press <strong>I bought this</strong> so nobody else buys it too. ${esc(person)} can't see what's ticked.</p>
+    </section>
+    <section><ul id="items" class="items"></ul></section>`));
+
+  let items = null, claims = {};
+  const draw = () => {
+    if (!items) return;
+    const ul = app.querySelector("#items");
+    ul.replaceChildren(items.length ? "" : h(`<li class="empty">${esc(person)} hasn't added anything yet.</li>`));
+    // Unbought first, keeping the owner's order otherwise
+    [...items].sort((a, b) => !!claims[a.id] - !!claims[b.id]).forEach((item) => {
+      const c = claims[item.id];
+      const action = c
+        ? `<span class="bought">✓ Bought${c.by ? ` by ${esc(c.by === me ? "you" : c.by)}` : ""}</span>
+           <button class="link" data-unclaim="${esc(item.id)}">Undo</button>`
+        : `<button class="primary" data-claim="${esc(item.id)}">I bought this</button>`;
+      ul.append(itemCard(item, action, !!c));
+    });
+  };
+
+  unsubscribers.push(onSnapshot(doc(db, "lists", listId), (snap) => {
+    items = snap.exists() ? snap.data().items : [];
+    draw();
+  }));
+  unsubscribers.push(onSnapshot(collection(db, "lists", listId, "claims"), (snap) => {
+    claims = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+    draw();
+  }));
+
+  app.querySelector("#items").addEventListener("click", async (e) => {
+    const { claim, unclaim } = e.target.dataset;
+    if (claim) {
+      await setDoc(doc(db, "lists", listId, "claims", claim), { by: me, at: serverTimestamp() });
+      toast("Ticked off — thanks!");
+    }
+    if (unclaim && confirm("Mark this as NOT bought?")) {
+      await deleteDoc(doc(db, "lists", listId, "claims", unclaim));
+    }
+  });
 }

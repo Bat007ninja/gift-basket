@@ -119,3 +119,14 @@ details[open] summary { margin-bottom: 8px; }
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: .9rem;
 }
+
+/* Family mode */
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 12px; }
+.person {
+  display: grid; gap: 2px; text-align: center; text-decoration: none; cursor: pointer;
+  font: inherit; font-size: 1.15rem; font-weight: 700; color: var(--text);
+  background: var(--bg); border: 2px solid var(--line); border-radius: var(--radius); padding: 18px 10px;
+}
+.person:hover, .person:focus-visible { border-color: var(--accent); }
+.person small { font-size: .8rem; font-weight: 400; color: var(--muted); }
+.big { display: block; width: 100%; text-align: center; font-size: 1.05rem; padding: 14px 16px; white-space: normal; }
