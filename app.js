@@ -62,12 +62,14 @@ function route() {
   if (page === "b" && a) return renderGifter(a);
 
   // Family mode: one shared link, everyone picks their name
-  if (page === "f" && a) { store.set("familyCode", a); history.replaceState(null, "", "#/"); }
+  if (page === "f" && a) store.set("familyCode", a);
   if (!store.get("familyCode", "")) return renderHome();
   const me = store.get("me", "");
   if (page === "who" || !family.includes(me)) return renderWho();
   const person = family.find((n) => n === decodeURIComponent(a || ""));
   if (page === "p" && person) return person === me ? renderMyBasket(me) : renderTheirBasket(person, me);
+  // Keep the family code in the address, so a bookmark or Home Screen icon made here still works
+  history.replaceState(null, "", `#/f/${store.get("familyCode", "")}`);
   renderFamily(me);
 }
 window.addEventListener("hashchange", route);
@@ -89,6 +91,7 @@ function renderHome() {
   const mine = myBaskets();
   app.replaceChildren(h(`
     <section class="card">
+      <p class="note-box">🎄 <strong>Looking for the family baskets?</strong> Open the link from the family group chat instead.</p>
       <h1>Make a gift basket</h1>
       <p class="muted">Add links to things you'd love. Share the link with friends and family —
       they can tick off what they've bought so nobody double-buys, and you never see what's been bought.</p>
